@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
-cron "1 12 * * *" script-path=checkIn_TianYiYun.py,tag=匹配cron用
+cron "1 12 * * *" script-path=check_in_TianYiYun.py,tag=匹配cron用
 new Env('天翼云盘签到')
 
 环境变量：
