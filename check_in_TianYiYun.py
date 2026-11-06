@@ -26,6 +26,7 @@ new Env('天翼云盘签到')
 """
 
 import base64
+import io
 import json
 import os
 import random
@@ -33,6 +34,7 @@ import re
 import time
 import unicodedata
 import urllib.parse
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta
 
 import requests
@@ -95,6 +97,13 @@ def log(level, message, account=None):
     )
 
 
+def log_captured_output(output, level="INFO"):
+    """将依赖模块直接写入 stdout/stderr 的内容转换为统一日志格式。"""
+    for line in output.splitlines():
+        if line.strip():
+            log(level, line.strip())
+
+
 def current_time():
     """返回当前本地时间。"""
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -140,11 +149,17 @@ def notify_user(title, content):
             log("INFO", line)
         return
 
+    output = io.StringIO()
     try:
-        notification_send(title, content)
-        log("SUCCESS", f"✅ 通知发送完成：{title}")
+        with redirect_stdout(output), redirect_stderr(output):
+            notification_send(title, content)
     except Exception as exc:
+        log_captured_output(output.getvalue(), level="INFO")
         log("ERROR", f"❌ 通知发送失败：{exc}")
+        return
+
+    log_captured_output(output.getvalue(), level="INFO")
+    log("SUCCESS", f"✅ 通知发送完成：{title}")
 
 
 def load_accounts():
