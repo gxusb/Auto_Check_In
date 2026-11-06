@@ -13,7 +13,7 @@ V1版-已失效
 Author: BNDou
 Date: 2024-03-15 21:43:06
 LastEditTime: 2025-11-18 03:49:26
-FilePath: \Auto_Check_In\check_in_Quark.py
+FilePath: \\Auto_Check_In\\check_in_Quark.py
 Description: 
 抓包流程：
     【手机端】
@@ -27,6 +27,8 @@ Description:
 '''
 import os
 import re
+import unicodedata
+from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -37,11 +39,51 @@ import requests
 ENV_NAME = "COOKIE_QUARK"
 REQUEST_TIMEOUT = 15
 
+
+def display_width(text):
+    """计算字符串在终端中的显示宽度，中文及宽字符按两列计算。"""
+    width = 0
+
+    for char in str(text):
+        if unicodedata.combining(char):
+            continue
+
+        width += (
+            2
+            if unicodedata.east_asian_width(char) in ("W", "F")
+            else 1
+        )
+
+    return width
+
+
+def pad_display(text, width):
+    """按终端显示宽度补空格，而不是按字符数量补空格。"""
+    text = str(text)
+    return text + " " * max(0, width - display_width(text))
+
+
+def log(level, message, account=None):
+    """统一日志格式，自动对齐列宽并保留表情图标。"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    account_label = f"账号 {account}" if account is not None else "系统"
+
+    level_text = f"[{level}]"
+    account_text = f"[{account_label}]"
+
+    print(
+        f"{timestamp} "
+        f"{pad_display(level_text, 10)} "
+        f"{pad_display(account_text, 10)} "
+        f"{message}"
+    )
+
+
 try:
     from notify import send as notification_send
 except Exception as err:
     notification_send = None
-    print(f"{err}\n❌ 加载通知服务失败")
+    log("ERROR", f"❌ 加载通知服务失败：{err}")
 
 
 # -------------------- 账号解析 --------------------
@@ -194,34 +236,33 @@ class Quark:
         cap_sign = growth_info.get("cap_sign") or {}
 
         sign_capacity = cap_composition.get("sign_reward", 0)
-        log = (
+        progress = cap_sign.get("sign_progress", 0)
+        target = cap_sign.get("sign_target", 0)
+
+        capacity_log = (
             f" {membership} {user}\n"
             f"💾 网盘总容量："
             f"{self.convert_bytes(growth_info.get('total_capacity', 0))}，"
             f"签到累计容量：{self.convert_bytes(sign_capacity)}\n"
         )
 
-        progress = cap_sign.get("sign_progress", 0)
-        target = cap_sign.get("sign_target", 0)
-
         if cap_sign.get("sign_daily"):
             reward = cap_sign.get("sign_daily_reward", 0)
-            log += (
+            capacity_log += (
                 f"✅ 签到日志：今日已签到+{self.convert_bytes(reward)}，"
                 f"连签进度({progress}/{target})\n"
             )
-            return log
+            return capacity_log
 
         success, result = self.get_growth_sign()
-        if success:
-            log += (
-                f"✅ 执行签到：今日签到+{self.convert_bytes(result)}，"
-                f"连签进度({progress + 1}/{target})\n"
-            )
-        else:
-            log += f"❌ 签到异常：{result}\n"
+        if not success:
+            return capacity_log + f"❌ 签到异常：{result}\n"
 
-        return log
+        capacity_log += (
+            f"✅ 执行签到：今日签到+{self.convert_bytes(result)}，"
+            f"连签进度({progress + 1}/{target})\n"
+        )
+        return capacity_log
 
 
 # -------------------- 批量处理与通知 --------------------
@@ -232,9 +273,12 @@ def process_accounts(accounts):
     results = []
 
     for index, user_data in enumerate(accounts, start=1):
-        result = f"🙍🏻‍♂️ 第{index}个账号"
-        result += Quark(user_data).do_sign()
-        results.append(result)
+        account_name = user_data.get("user", f"未命名账号{index}")
+        log("INFO", f"🙍🏻‍♂️ 处理第 {index} 个账号：{account_name}", index)
+
+        account_result = f"🙍🏻‍♂️ 第{index}个账号"
+        account_result += Quark(user_data).do_sign()
+        results.append(account_result)
 
     return results
 
@@ -247,37 +291,43 @@ def format_notification(results):
 def notify_user(title, content):
     """发送签到结果通知；失败时输出错误信息。"""
     if notification_send is None:
+        log("INFO", f"📢 {title}")
+        for line in content.splitlines():
+            log("INFO", line)
         return
 
     try:
         notification_send(title, content)
+        log("SUCCESS", f"✅ 通知发送完成：{title}")
     except Exception as err:
-        print(f"{err}\n❌ 通知发送失败，请查看运行日志")
+        log("ERROR", f"❌ 通知发送失败：{err}")
 
 
 # -------------------- 主流程 --------------------
 
 
 def main():
-    accounts = get_accounts()
+    """运行主流程并处理签到结果。"""
+    title = "夸克自动签到"
+    log("INFO", "==== 夸克网盘签到开始 ====")
 
+    accounts = get_accounts()
     if not accounts:
         message = f"❌ 未添加 {ENV_NAME} 环境变量或账号信息为空"
-        print(message)
-        notify_user("夸克自动签到", message)
+        log("ERROR", message)
+        notify_user(title, message)
         return message
 
-    print(f"✅ 检测到共 {len(accounts)} 个夸克账号\n")
+    log("INFO", f"📝 共发现 {len(accounts)} 个账号，开始处理")
 
     results = process_accounts(accounts)
     message = format_notification(results)
-    print(message)
-    notify_user("夸克自动签到", message)
+    log("INFO", message)
+    notify_user(title, message)
 
     return message
 
 
 if __name__ == "__main__":
-    print("----------夸克网盘开始签到----------")
     main()
-    print("----------夸克网盘签到完毕----------")
+    log("INFO", "==== 夸克网盘签到完成 ====")
