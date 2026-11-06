@@ -25,9 +25,11 @@ Description:
     例如: user=张三; url=https://drive-m.quark.cn/1/clouddrive/act/growth/reward?xxxxxx=xxxxxx&kps=abcdefg&sign=hijklmn&vcode=111111111;
     旧版环境变量格式也兼容，例如: user=张三; kps=abcdefg; sign=hijklmn; vcode=111111111;
 '''
+import io
 import os
 import re
 import unicodedata
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 
@@ -79,6 +81,13 @@ def log(level, message, account=None):
     )
 
 
+def log_captured_output(output, level="INFO"):
+    """将依赖模块直接写入 stdout/stderr 的内容转换为统一日志格式。"""
+    for line in output.splitlines():
+        if line.strip():
+            log(level, line.strip())
+
+
 try:
     from notify import send as notification_send
 except Exception as err:
@@ -100,7 +109,7 @@ def get_accounts():
 
 
 def parse_account(account_string):
-    """解析单个账号的分号分隔字段，并从 URL 中补充签到参数。"""
+    """解析单个账号的��号分隔字段，并从 URL 中补充签到参数。"""
     account = {}
 
     for item in account_string.split(";"):
@@ -294,18 +303,24 @@ def format_notification(results):
 
 
 def notify_user(title, content):
-    """发送签到结果通知；失败时输出错误信息。"""
+    """发送签到结果通知；将通知模块的输出也转换为统一日志格式。"""
     if notification_send is None:
         log("INFO", f"📢 {title}")
         for line in content.splitlines():
             log("INFO", line)
         return
 
+    output = io.StringIO()
     try:
-        notification_send(title, content)
-        log("SUCCESS", f"✅ 通知发送完成：{title}")
+        with redirect_stdout(output), redirect_stderr(output):
+            notification_send(title, content)
     except Exception as err:
+        log_captured_output(output.getvalue(), level="INFO")
         log("ERROR", f"❌ 通知发送失败：{err}")
+        return
+
+    log_captured_output(output.getvalue(), level="INFO")
+    log("SUCCESS", f"✅ 通知发送完成：{title}")
 
 
 # -------------------- 主流程 --------------------
