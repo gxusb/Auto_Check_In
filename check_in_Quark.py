@@ -276,9 +276,14 @@ def process_accounts(accounts):
         account_name = user_data.get("user", f"未命名账号{index}")
         log("INFO", f"🙍🏻‍♂️ 处理第 {index} 个账号：{account_name}", index)
 
-        account_result = f"🙍🏻‍♂️ 第{index}个账号"
-        account_result += Quark(user_data).do_sign()
+        sign_result = Quark(user_data).do_sign()
+        account_result = f"🙍🏻‍♂️ 第{index}个账号{sign_result}"
         results.append(account_result)
+
+        for line in sign_result.splitlines():
+            if line.strip():
+                level = "ERROR" if "❌" in line else "INFO"
+                log(level, line.strip(), index)
 
     return results
 
@@ -322,7 +327,6 @@ def main():
 
     results = process_accounts(accounts)
     message = format_notification(results)
-    log("INFO", message)
     notify_user(title, message)
 
     return message
