@@ -1,2 +1,42 @@
 # Auto_Check_In
 
+自动执行夸克网盘和天翼云盘每日签到，并汇总签到结果。脚本可单独运行，也可配置在支持 Python 的定时任务环境中。
+
+## 脚本介绍
+
+| 脚本 | 功能 | 账号配置 |
+| --- | --- | --- |
+| `checkIn_Quark.py` | 使用夸克移动端接口检查签到状态；未签到时执行签到，并汇报容量及签到奖励。支持多个账号。 | `COOKIE_QUARK` 环境变量 |
+| `checkIn_TianYiYun.py` | 登录天翼云盘并签到，汇报签到奖励以及个人、家庭网盘容量变化。支持多个账号。 | `TY_ACCOUNTS` 环境变量，JSON 数组 |
+| `notify.py` | 通知模块，供签到脚本发送结果；按需配置所使用的推送渠道。 | 推送渠道对应的环境变量 |
+
+## 使用方法
+
+需要 Python 3。安装依赖：
+
+```bash
+pip install requests rsa
+```
+
+夸克账号需要先通过手机抓包获取抽奖页请求 URL：打开抽奖页后，找到 `https://drive-m.quark.cn/1/clouddrive/act/growth/reward` 请求，将包含 `kps`、`sign`、`vcode` 参数的完整 URL 配置到 `COOKIE_QUARK`。多个账号用换行或 `&&` 分隔；`user` 用于标识账号。
+
+```text
+COOKIE_QUARK=user=账号1; url=https://drive-m.quark.cn/1/clouddrive/act/growth/reward?...&kps=...&sign=...&vcode=...
+```
+
+天翼云盘账号通过 `TY_ACCOUNTS` 配置为 JSON 数组：
+
+```json
+[
+  {"username": "手机号", "password": "密码"},
+  {"username": "另一个手机号", "password": "密码"}
+]
+```
+
+天翼云盘默认在签到前随机等待 0–3600 秒。设置 `RANDOM_SIGNIN=false` 可关闭随机等待；设置 `MAX_RANDOM_DELAY` 可调整最大等待秒数。无 `notify.py` 或未配置推送渠道时，结果会输出到控制台。
+
+## 定时运行
+
+脚本本身不负责常驻调度，请在系统计划任务或脚本平台中设置每日运行。脚本注释中的建议时间为夸克 09:00、天翼云盘 12:01；请按运行环境的时区配置。
+
+账号凭据和签到 URL 含有敏感信息，请通过运行环境的环境变量管理，不要提交到版本库。
