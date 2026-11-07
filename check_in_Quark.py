@@ -40,6 +40,7 @@ import requests
 
 ENV_NAME = "COOKIE_QUARK"
 REQUEST_TIMEOUT = 15
+GROWTH_REQUEST_PATHS = ("/capacity/growth/info", "/capacity/growth/sign")
 
 
 def display_width(text):
@@ -104,12 +105,13 @@ def get_accounts():
     if not raw_value:
         return []
 
+    # 多账号支持换行或 && 分隔；单个账号内的字段使用分号分隔。
     account_strings = re.split(r"\n|&&", raw_value)
     return [parse_account(item) for item in account_strings if item.strip()]
 
 
 def parse_account(account_string):
-    """解析单个账号的��号分隔字段，并从 URL 中补充签到参数。"""
+    """解析单个账号的分号分隔字段，并从 URL 中补充签到参数。"""
     account = {}
 
     for item in account_string.split(";"):
@@ -118,6 +120,7 @@ def parse_account(account_string):
             account[key.strip()] = value.strip()
 
     if account.get("url"):
+        # 完整请求 URL 中的参数优先于单独填写的同名字段。
         account.update(extract_params(account["url"]))
 
     return account
@@ -144,6 +147,7 @@ class Quark:
     def __init__(self, user_data):
         self.param = user_data
         self.session = requests.Session()
+        self.request_time = None
 
     def _query_params(self):
         """构造接口通用查询参数。"""
@@ -160,6 +164,10 @@ class Quark:
     def _request_json(self, method, url, **kwargs):
         """发送请求并解析 JSON；请求或解析失败时返回错误信息。"""
         try:
+            if url.endswith(GROWTH_REQUEST_PATHS):
+                # 在签到相关请求发起时记录时间，供最终通知使用。
+                self.request_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
             response = self.session.request(
                 method,
                 url,
@@ -233,28 +241,31 @@ class Quark:
 
         return "接口返回格式异常"
 
-    def do_sign(self):
-        """检查签到状态；若今日尚未签到则执行签到。"""
-        growth_info = self.get_growth_info()
-        if not growth_info:
-            return "❌ 签到异常：获取成长信息失败\n"
-
+    def _format_capacity_summary(self, growth_info):
+        """格式化账号身份及当前容量信息。"""
         user = self.param.get("user", "未命名账号")
         membership = "88VIP" if growth_info.get("88VIP") else "普通用户"
         cap_composition = growth_info.get("cap_composition") or {}
-        cap_sign = growth_info.get("cap_sign") or {}
-
         sign_capacity = cap_composition.get("sign_reward", 0)
-        progress = cap_sign.get("sign_progress", 0)
-        target = cap_sign.get("sign_target", 0)
-
-        capacity_log = (
+        return (
             f" {membership} {user}\n"
             f"💾 网盘总容量："
             f"{self.convert_bytes(growth_info.get('total_capacity', 0))}，"
             f"签到累计容量：{self.convert_bytes(sign_capacity)}\n"
         )
 
+    def do_sign(self):
+        """检查签到状态；若今日尚未签到则执行签到。"""
+        growth_info = self.get_growth_info()
+        if not growth_info:
+            return "❌ 签到异常：获取成长信息失败\n"
+
+        cap_sign = growth_info.get("cap_sign") or {}
+        progress = cap_sign.get("sign_progress", 0)
+        target = cap_sign.get("sign_target", 0)
+        capacity_log = self._format_capacity_summary(growth_info)
+
+        # 已签到时保留接口返回的当日奖励，不重复提交签到请求。
         if cap_sign.get("sign_daily"):
             reward = cap_sign.get("sign_daily_reward", 0)
             capacity_log += (
@@ -280,12 +291,17 @@ class Quark:
 def process_accounts(accounts):
     """依次处理账号并收集签到结果。"""
     results = []
+    latest_request_time = None
 
     for index, user_data in enumerate(accounts, start=1):
         account_name = user_data.get("user", f"未命名账号{index}")
         log("INFO", f"🙍🏻‍♂️ 处理第 {index} 个账号：{account_name}", index)
 
-        sign_result = Quark(user_data).do_sign()
+        quark = Quark(user_data)
+        sign_result = quark.do_sign()
+        if quark.request_time:
+            # 使用最近一个账号实际发起的成长信息或签到请求时间。
+            latest_request_time = quark.request_time
         account_result = f"🙍🏻‍♂️ 第{index}个账号{sign_result}"
         results.append(account_result)
 
@@ -294,12 +310,15 @@ def process_accounts(accounts):
                 level = "ERROR" if "❌" in line else "INFO"
                 log(level, line.strip(), index)
 
-    return results
+    return results, latest_request_time
 
 
-def format_notification(results):
+def format_notification(results, request_time=None):
     """生成多账号签到汇总通知。"""
-    return "\n".join(results)
+    content = "\n".join(results)
+    if request_time:
+        content += f"\n🕐 完成时间: {request_time}"
+    return content
 
 
 def notify_user(title, content):
@@ -340,8 +359,8 @@ def main():
 
     log("INFO", f"📝 共发现 {len(accounts)} 个账号，开始处理")
 
-    results = process_accounts(accounts)
-    message = format_notification(results)
+    results, request_time = process_accounts(accounts)
+    message = format_notification(results, request_time)
     notify_user(title, message)
 
     return message
