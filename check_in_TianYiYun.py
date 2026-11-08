@@ -208,18 +208,12 @@ class TianYiYunPan:
 
         if "@" in username:
             name, domain = username.split("@", 1)
-            if len(name) <= 1:
-                masked_name = name + "*"
-            else:
-                masked_name = name[0] + "*" * (len(name) - 1)
-            return f"{masked_name}@{domain}"
+            return f"{name[:1]}{'*' * max(1, len(name) - 1)}@{domain}"
 
         if username.isdigit() and len(username) == 11:
             return f"{username[:3]}****{username[-4:]}"
 
-        if len(username) <= 1:
-            return username + "*"
-        return username[0] + "*" * (len(username) - 1)
+        return f"{username[:1]}{'*' * max(1, len(username) - 1)}"
 
     @staticmethod
     def _base64_to_radix36(value):
@@ -323,12 +317,8 @@ class TianYiYunPan:
 
             login_page_url = response.url.replace("/index.html", "/login.html")
 
-            login_page_url = self._add_query_param(
-                login_page_url, "protocol", "https"
-            )
-            login_page_url = self._add_query_param(
-                login_page_url, "showback", "true"
-            )
+            for key, value in (("protocol", "https"), ("showback", "true")):
+                login_page_url = self._add_query_param(login_page_url, key, value)
 
             login_page = self.session.get(
                 login_page_url,
@@ -537,14 +527,13 @@ class TianYiYunPan:
     @classmethod
     def format_capacity_info(cls, before_info, after_info):
         """整理个人及家庭网盘容量信息。"""
-        return "\n".join((
-            cls._format_capacity_line(
-                "个人", before_info, after_info, "cloudCapacityInfo"
-            ),
-            cls._format_capacity_line(
-                "家庭", before_info, after_info, "familyCapacityInfo"
-            ),
-        ))
+        return "\n".join(
+            cls._format_capacity_line(label, before_info, after_info, key)
+            for label, key in (
+                ("个人", "cloudCapacityInfo"),
+                ("家庭", "familyCapacityInfo"),
+            )
+        )
 
     def run(self):
         """处理当前账号，返回签到及容量结果。"""
