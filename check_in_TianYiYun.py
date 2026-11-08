@@ -41,7 +41,6 @@ from datetime import datetime, timedelta
 import requests
 import rsa
 
-
 # -------------------- 配置 --------------------
 
 REQUEST_TIMEOUT = 15
@@ -57,8 +56,8 @@ try:
 except ImportError:
     notification_send = None
 
-
 # -------------------- 通用函数 --------------------
+
 
 def display_width(text):
     """计算字符串在终端中的显示宽度，中文及宽字符按两列计算。"""
@@ -215,7 +214,6 @@ def load_accounts():
 
 if notification_send is None:
     log("WARN", "⚠️ 未加载 notify.py，通知内容将输出到控制台")
-
 
 # -------------------- 天翼云盘签到 --------------------
 
@@ -379,8 +377,10 @@ class TianYiYunPan:
         if not all(isinstance(value, (int, float)) for value in (total, used)):
             return f"{label}：容量信息无法获取"
 
-        before = before_info.get(key) if isinstance(before_info, dict) else None
-        before_total = before.get("totalSize") if isinstance(before, dict) else None
+        before = before_info.get(key) if isinstance(
+            before_info, dict) else None
+        before_total = before.get("totalSize") if isinstance(
+            before, dict) else None
 
         change_text = ""
         if isinstance(before_total, (int, float)):
@@ -568,7 +568,8 @@ class TianYiYunPan:
             result = response.json()
 
             bonus = result.get("netdiskBonus", 0)
-            already_signed = str(result.get("isSign", "true")).lower() != "false"
+            already_signed = str(result.get(
+                "isSign", "true")).lower() != "false"
 
             if already_signed:
                 return f"📅 今日已签到，获得 {bonus}M 空间"
@@ -618,8 +619,8 @@ class TianYiYunPan:
 
         return result
 
-
 # -------------------- 批量处理与通知 --------------------
+
 
 def process_accounts(accounts):
     """依次处理账号，账号之间增加随机间隔。"""

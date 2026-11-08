@@ -36,7 +36,6 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
-
 # -------------------- 配置 --------------------
 
 ENV_NAME = "COOKIE_QUARK"
@@ -77,8 +76,8 @@ def log(level, message, account=None):
 
     print(
         f"{timestamp} "
-        f"{pad_display(level_text, 10)} "
-        f"{pad_display(account_text, 10)} "
+        f"{pad_display(level_text, 9)} "
+        f"{pad_display(account_text, 8)} "
         f"{message}"
     )
 
@@ -95,7 +94,6 @@ try:
 except Exception as err:
     notification_send = None
     log("ERROR", f"❌ 加载通知服务失败：{err}")
-
 
 # -------------------- 账号解析 --------------------
 
@@ -134,7 +132,6 @@ def extract_params(url):
         key: query.get(key, [""])[0]
         for key in ("kps", "sign", "vcode")
     }
-
 
 # -------------------- 夸克网盘签到 --------------------
 
@@ -312,7 +309,6 @@ class Quark:
         )
         return capacity_log
 
-
 # -------------------- 批量处理与通知 --------------------
 
 
@@ -368,7 +364,6 @@ def notify_user(title, content):
 
     log_captured_output(output.getvalue(), level="INFO")
     log("SUCCESS", f"✅ 通知发送完成：{title}")
-
 
 # -------------------- 主流程 --------------------
 
