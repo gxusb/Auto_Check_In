@@ -362,8 +362,8 @@ class TianYiYunPan:
             size_value = 0
 
         if size_value >= 1024**4:
-            return f"{size_value / 1024**4:.3f}TB"
-        return f"{size_value / 1024**3:.3f}GB"
+            return f"{size_value / 1024**4:.4f}TB"
+        return f"{size_value / 1024**3:.4f}GB"
 
     @classmethod
     def _format_capacity_line(cls, label, before_info, after_info, key):
@@ -385,7 +385,7 @@ class TianYiYunPan:
         change_text = ""
         if isinstance(before_total, (int, float)):
             change_mb = (total - before_total) / 1024**2
-            change_text = f"({change_mb:+.2f} MB) "
+            change_text = f"[{change_mb:+.0f}MB] "
 
         line = (
             f"{label}：{change_text}"
