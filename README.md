@@ -57,7 +57,7 @@ COOKIE_QUARK=user=账号1; url=https://drive-m.quark.cn/1/clouddrive/act/growth/
 ## 完成 ✅... 2026-11-07 20:50:44  耗时 19 秒
 ```
 
-天翼云盘默认在签到前随机等待 0–3600 秒。设置 `RANDOM_SIGNIN=false` 可关闭随机等待；设置 `MAX_RANDOM_DELAY` 可调整最大等待秒数。无 `notify.py` 或未配置推送渠道时，结果会输出到控制台。
+天翼云盘默认在签到前随机等待 0–120 秒。设置 `RANDOM_SIGNIN=false` 可关闭随机等待；设置 `MAX_RANDOM_DELAY` 可调整最大等待秒数。无 `notify.py` 或未配置推送渠道时，结果会输出到控制台。
 
 ## 定时运行
 

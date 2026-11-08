@@ -16,7 +16,7 @@ new Env('天翼云盘签到')
    默认：true
 
 3. MAX_RANDOM_DELAY：可选，签到前随机等待的最大秒数。
-   默认：3600
+   默认：120
 
 依赖：
     pip install requests rsa
@@ -28,6 +28,7 @@ new Env('天翼云盘签到')
 import base64
 import io
 import json
+import math
 import os
 import random
 import re
@@ -46,9 +47,9 @@ import rsa
 RANDOM_SIGNIN = os.getenv("RANDOM_SIGNIN", "true").strip().lower() == "true"
 
 try:
-    MAX_RANDOM_DELAY = max(0, int(os.getenv("MAX_RANDOM_DELAY", "3600")))
+    MAX_RANDOM_DELAY = max(0, int(os.getenv("MAX_RANDOM_DELAY", "120")))
 except ValueError:
-    MAX_RANDOM_DELAY = 3600
+    MAX_RANDOM_DELAY = 60
 
 try:
     from notify import send as notification_send
@@ -130,15 +131,18 @@ def wait_with_countdown(seconds, task_name):
         return
 
     log("INFO", f"💤 {task_name}将在 {format_duration(seconds)} 后开始")
-    remaining = seconds
+    deadline = time.monotonic() + seconds
 
-    while remaining > 0:
+    while True:
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            break
+
+        remaining = math.ceil(remaining_seconds)
         if remaining <= 10 or remaining % 10 == 0:
             log("INFO", f"⏳ {task_name}倒计时：{format_duration(remaining)}")
 
-        sleep_seconds = 1 if remaining <= 10 else min(10, remaining)
-        time.sleep(sleep_seconds)
-        remaining -= sleep_seconds
+        time.sleep(min(10, remaining_seconds))
 
 
 def notify_user(title, content):
@@ -651,14 +655,6 @@ def format_notification(results):
 def main():
     log("INFO", "==== 天翼云盘签到开始 ====")
 
-    if RANDOM_SIGNIN and MAX_RANDOM_DELAY > 0:
-        delay = random.randint(0, MAX_RANDOM_DELAY)
-        if delay:
-            estimated_start = datetime.now() + timedelta(seconds=delay)
-            log("INFO", f"🎲 随机延迟：{format_duration(delay)}")
-            log("INFO", f"⏰ 预计开始时间：{estimated_start.strftime('%H:%M:%S')}")
-            wait_with_countdown(delay, "天翼云盘签到")
-
     try:
         accounts = load_accounts()
     except ValueError as exc:
@@ -666,6 +662,14 @@ def main():
         log("ERROR", message)
         notify_user("天翼云盘签到失败", message)
         return
+
+    if RANDOM_SIGNIN and MAX_RANDOM_DELAY > 0:
+        delay = random.randint(0, MAX_RANDOM_DELAY)
+        if delay:
+            estimated_start = datetime.now() + timedelta(seconds=delay)
+            log("INFO", f"🎲 随机延迟：{format_duration(delay)}")
+            log("INFO", f"⏰ 预计开始时间：{estimated_start.strftime('%H:%M:%S')}")
+            wait_with_countdown(delay, "天翼云盘签到")
 
     log("INFO", f"📝 共发现 {len(accounts)} 个账号，开始处理")
 
