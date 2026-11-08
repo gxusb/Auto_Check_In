@@ -26,6 +26,7 @@ Description:
     旧版环境变量格式也兼容，例如: user=张三; kps=abcdefg; sign=hijklmn; vcode=111111111;
 '''
 import io
+import math
 import os
 import re
 import unicodedata
@@ -178,10 +179,36 @@ class Quark:
             return {"message": "接口返回的内容不是有效 JSON"}
 
     @staticmethod
-    def convert_bytes(byte_count):
-        """将字节数转换为易读的容量单位。"""
+    def _numeric_value(value):
+        """将有限的数值或数字字符串转换为浮点数。"""
+        if isinstance(value, bool):
+            return None
+
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+        return number if math.isfinite(number) else None
+
+    @classmethod
+    def _format_number(cls, value):
+        number = cls._numeric_value(value)
+        if number is None:
+            return "?"
+        return f"{number:g}"
+
+    @classmethod
+    def convert_bytes(cls, byte_count):
+        """将字节数转换为易读的容量单位；无效数值不参与换算。"""
         units = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
-        value = byte_count or 0
+        if byte_count is None or byte_count == "":
+            value = 0
+        else:
+            value = cls._numeric_value(byte_count)
+            if value is None or value < 0:
+                return "N/A"
+
         unit_index = 0
 
         while value >= 1024 and unit_index < len(units) - 1:
@@ -257,8 +284,10 @@ class Quark:
             return "❌ 签到异常：获取成长信息失败\n"
 
         cap_sign = growth_info.get("cap_sign") or {}
-        progress = cap_sign.get("sign_progress", 0)
-        target = cap_sign.get("sign_target", 0)
+        progress = self._numeric_value(cap_sign.get("sign_progress", 0))
+        target = self._numeric_value(cap_sign.get("sign_target", 0))
+        progress_text = self._format_number(progress)
+        target_text = self._format_number(target)
         capacity_log = self._format_capacity_summary(growth_info)
 
         # 已签到时保留接口返回的当日奖励，不重复提交签到请求。
@@ -266,7 +295,7 @@ class Quark:
             reward = cap_sign.get("sign_daily_reward", 0)
             capacity_log += (
                 f"✅ 签到日志：今日已签到+{self.convert_bytes(reward)}，"
-                f"连签进度({progress}/{target})\n"
+                f"连签进度({progress_text}/{target_text})\n"
             )
             return capacity_log
 
@@ -274,9 +303,12 @@ class Quark:
         if not success:
             return capacity_log + f"❌ 签到异常：{result}\n"
 
+        next_progress = (
+            self._format_number(progress + 1) if progress is not None else "?"
+        )
         capacity_log += (
             f"✅ 执行签到：今日签到+{self.convert_bytes(result)}，"
-            f"连签进度({progress + 1}/{target})\n"
+            f"连签进度({next_progress}/{target_text})\n"
         )
         return capacity_log
 

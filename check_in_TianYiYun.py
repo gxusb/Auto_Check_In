@@ -44,11 +44,12 @@ import rsa
 
 # -------------------- 配置 --------------------
 
+REQUEST_TIMEOUT = 15
 RANDOM_SIGNIN = os.getenv("RANDOM_SIGNIN", "true").strip().lower() == "true"
 
 try:
-    MAX_RANDOM_DELAY = max(0, int(os.getenv("MAX_RANDOM_DELAY", "120")))
-except ValueError:
+    MAX_RANDOM_DELAY = max(0, int(float(os.getenv("MAX_RANDOM_DELAY", "120"))))
+except (TypeError, ValueError):
     MAX_RANDOM_DELAY = 60
 
 try:
@@ -111,11 +112,16 @@ def current_time():
 
 
 def format_duration(seconds):
-    """将秒数格式化为易读的中文时长。"""
-    if seconds <= 0:
+    """将秒数格式化为易读的中文时长，避免浮点秒数导致格式不稳定。"""
+    try:
+        total_seconds = max(0, int(math.ceil(float(seconds))))
+    except (TypeError, ValueError):
         return "立即执行"
 
-    hours, remainder = divmod(seconds, 3600)
+    if total_seconds <= 0:
+        return "立即执行"
+
+    hours, remainder = divmod(total_seconds, 3600)
     minutes, secs = divmod(remainder, 60)
 
     if hours:
@@ -127,20 +133,27 @@ def format_duration(seconds):
 
 def wait_with_countdown(seconds, task_name):
     """等待指定秒数，并定期输出倒计时。"""
-    if seconds <= 0:
+    try:
+        total_seconds = max(0, int(math.ceil(float(seconds))))
+    except (TypeError, ValueError):
         return
 
-    log("INFO", f"💤 {task_name}将在 {format_duration(seconds)} 后开始")
-    deadline = time.monotonic() + seconds
-    remaining_seconds = deadline - time.monotonic()
+    if total_seconds <= 0:
+        return
 
-    while remaining_seconds > 0:
-        remaining = math.ceil(remaining_seconds)
+    log("INFO", f"💤 {task_name}将在 {format_duration(total_seconds)} 后开始")
+    deadline = time.monotonic() + total_seconds
+
+    while True:
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            break
+
+        remaining = int(math.ceil(remaining_seconds))
         if remaining <= 10 or remaining % 10 == 0:
             log("INFO", f"⏳ {task_name}倒计时：{format_duration(remaining)}")
 
-        time.sleep(min(10, remaining_seconds))
-        remaining_seconds = deadline - time.monotonic()
+        time.sleep(min(1, remaining_seconds))
 
 
 def notify_user(title, content):
@@ -331,7 +344,7 @@ class TianYiYunPan:
                     "Referer": "https://cloud.189.cn/web/main/",
                     "Accept": "application/json;charset=UTF-8",
                 },
-                timeout=15,
+                timeout=REQUEST_TIMEOUT,
             )
             response.raise_for_status()
             return response.json()
@@ -341,14 +354,22 @@ class TianYiYunPan:
 
     @staticmethod
     def _format_size(size_bytes):
-        """将字节转换为 GB；达到 1024GB 后改用 TB 显示。"""
-        if size_bytes >= 1024**4:
-            return f"{size_bytes / 1024**4:.3f}TB"
-        return f"{size_bytes / 1024**3:.3f}GB"
+        """将字节转换为合理的容量单位，保证数值在有效范围内。"""
+        try:
+            size_value = float(size_bytes)
+        except (TypeError, ValueError):
+            return "N/A"
+
+        if size_value < 0:
+            size_value = 0
+
+        if size_value >= 1024**4:
+            return f"{size_value / 1024**4:.3f}TB"
+        return f"{size_value / 1024**3:.3f}GB"
 
     @classmethod
     def _format_capacity_line(cls, label, before_info, after_info, key):
-        """展示容量变化、已用容量与总容量。"""
+        """展示容量变化、已用容量与总容量，并避免无效容量导致的计算异常。"""
         after = after_info.get(key) if isinstance(after_info, dict) else None
         if not isinstance(after, dict):
             return f"{label}：容量信息无法获取"
@@ -362,15 +383,17 @@ class TianYiYunPan:
         before_total = before.get("totalSize") if isinstance(before, dict) else None
 
         change_text = ""
-        if isinstance(before_total, (int, float)):
+        if isinstance(before_total, (int, float)) and isinstance(total, (int, float)):
             change_mb = (total - before_total) / 1024**2
             change_text = f"({change_mb:+.2f} MB) "
 
         line = (
             f"{label}：{change_text}"
-            f"已用 {cls._format_size(used)} / {cls._format_size(total)}"
+            f"已用 {cls._format_size(max(0, used))} / {cls._format_size(max(0, total))}"
         )
 
+        if total < 0 or used < 0:
+            return line + " ⚠️ 用量数据异常"
         return line + (" ⚠️ 用量数据异常" if used > total else "")
 
     @classmethod
@@ -397,7 +420,7 @@ class TianYiYunPan:
                 "&redirectURL=https://m.cloud.189.cn/zhuanti/2021/"
                 "shakeLottery/index.html"
             )
-            response = self.session.get(token_url, timeout=15)
+            response = self.session.get(token_url, timeout=REQUEST_TIMEOUT)
 
             url_match = re.search(r"https?://[^\s'\"]+", response.text)
             if not url_match:
@@ -407,7 +430,7 @@ class TianYiYunPan:
             response = self.session.get(
                 auto_url,
                 headers={**LOGIN_HEADERS, "Referer": token_url},
-                timeout=15,
+                timeout=REQUEST_TIMEOUT,
             )
 
             login_page_url = response.url.replace("/index.html", "/login.html")
@@ -422,7 +445,7 @@ class TianYiYunPan:
             login_page = self.session.get(
                 login_page_url,
                 headers={**LOGIN_HEADERS, "Referer": auto_url},
-                timeout=15,
+                timeout=REQUEST_TIMEOUT,
             )
 
             key_match = re.search(
@@ -442,7 +465,7 @@ class TianYiYunPan:
             config_response = self.session.post(
                 config_url,
                 headers={**LOGIN_HEADERS, "Referer": login_page.url},
-                timeout=15,
+                timeout=REQUEST_TIMEOUT,
             )
             config = config_response.json()
 
@@ -495,7 +518,7 @@ class TianYiYunPan:
                     "Referer": login_page.url,
                     "Accept": "*/*",
                 },
-                timeout=15,
+                timeout=REQUEST_TIMEOUT,
             )
 
             try:
@@ -512,7 +535,7 @@ class TianYiYunPan:
                 self.session.get(
                     redirect_url,
                     headers=LOGIN_HEADERS,
-                    timeout=15,
+                    timeout=REQUEST_TIMEOUT,
                 )
 
             log("SUCCESS", "✅ 登录成功", self.index)
@@ -537,7 +560,7 @@ class TianYiYunPan:
             response = self.session.get(
                 sign_url,
                 headers=SIGN_HEADERS,
-                timeout=15,
+                timeout=REQUEST_TIMEOUT,
             )
             response.raise_for_status()
             result = response.json()
@@ -565,19 +588,13 @@ class TianYiYunPan:
                 )
             else:
                 status = "❌ 登录失败，未完成签到"
-                capacity_info = (
-                    "个人：容量信息无法获取\n"
-                    "家庭：容量信息无法获取"
-                )
+                capacity_info = self.format_capacity_info(None, None)
 
             success = "签到成功" in status or "已签到" in status
 
         except Exception as exc:
             status = f"❌ 执行异常：{exc}"
-            capacity_info = (
-                "个人：容量信息无法获取\n"
-                "家庭：容量信息无法获取"
-            )
+            capacity_info = self.format_capacity_info(None, None)
             success = False
         finally:
             self.session.close()
