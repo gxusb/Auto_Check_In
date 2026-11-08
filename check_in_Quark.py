@@ -151,15 +151,11 @@ class Quark:
 
     def _query_params(self):
         """构造接口通用查询参数。"""
-        params = {
+        return {
             "pr": "ucpro",
             "fr": "android",
+            **{key: self.param.get(key, "") for key in self.QUERY_PARAMS},
         }
-        params.update({
-            key: self.param.get(key, "")
-            for key in self.QUERY_PARAMS
-        })
-        return params
 
     def _request_json(self, method, url, **kwargs):
         """发送请求并解析 JSON；请求或解析失败时返回错误信息。"""
@@ -233,13 +229,13 @@ class Quark:
             params=params,
         )
 
-        if isinstance(data, dict) and data.get("data"):
+        if not isinstance(data, dict):
+            return "接口返回格式异常"
+
+        if data.get("data"):
             return data["data"].get("balance")
 
-        if isinstance(data, dict):
-            return data.get("msg", data.get("message", "未知错误"))
-
-        return "接口返回格式异常"
+        return data.get("msg", data.get("message", "未知错误"))
 
     def _format_capacity_summary(self, growth_info):
         """格式化账号身份及当前容量信息。"""
