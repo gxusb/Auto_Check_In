@@ -92,8 +92,8 @@ def log(level, message, account=None):
 
     print(
         f"{timestamp} "
-        f"{pad_display(level_text, 10)} "
-        f"{pad_display(account_text, 10)} "
+        f"{pad_display(level_text, 9)} "
+        f"{pad_display(account_text, 8)} "
         f"{message}"
     )
 
@@ -132,17 +132,15 @@ def wait_with_countdown(seconds, task_name):
 
     log("INFO", f"💤 {task_name}将在 {format_duration(seconds)} 后开始")
     deadline = time.monotonic() + seconds
+    remaining_seconds = deadline - time.monotonic()
 
-    while True:
-        remaining_seconds = deadline - time.monotonic()
-        if remaining_seconds <= 0:
-            break
-
+    while remaining_seconds > 0:
         remaining = math.ceil(remaining_seconds)
         if remaining <= 10 or remaining % 10 == 0:
             log("INFO", f"⏳ {task_name}倒计时：{format_duration(remaining)}")
 
         time.sleep(min(10, remaining_seconds))
+        remaining_seconds = deadline - time.monotonic()
 
 
 def notify_user(title, content):
@@ -373,10 +371,7 @@ class TianYiYunPan:
             f"已用 {cls._format_size(used)} / {cls._format_size(total)}"
         )
 
-        if used > total:
-            line += " ⚠️ 用量数据异常"
-
-        return line
+        return line + (" ⚠️ 用量数据异常" if used > total else "")
 
     @classmethod
     def format_capacity_info(cls, before_info, after_info):
@@ -415,12 +410,7 @@ class TianYiYunPan:
                 timeout=15,
             )
 
-            if "/index.html" in response.url:
-                login_page_url = response.url.replace(
-                    "/index.html", "/login.html"
-                )
-            else:
-                login_page_url = response.url
+            login_page_url = response.url.replace("/index.html", "/login.html")
 
             login_page_url = self._add_query_param(
                 login_page_url, "protocol", "https"
@@ -663,13 +653,16 @@ def main():
         notify_user("天翼云盘签到失败", message)
         return
 
-    if RANDOM_SIGNIN and MAX_RANDOM_DELAY > 0:
-        delay = random.randint(0, MAX_RANDOM_DELAY)
-        if delay:
-            estimated_start = datetime.now() + timedelta(seconds=delay)
-            log("INFO", f"🎲 随机延迟：{format_duration(delay)}")
-            log("INFO", f"⏰ 预计开始时间：{estimated_start.strftime('%H:%M:%S')}")
-            wait_with_countdown(delay, "天翼云盘签到")
+    delay = (
+        random.randint(0, MAX_RANDOM_DELAY)
+        if RANDOM_SIGNIN and MAX_RANDOM_DELAY > 0
+        else 0
+    )
+    if delay > 0:
+        estimated_start = datetime.now() + timedelta(seconds=delay)
+        log("INFO", f"🎲 随机延迟：{format_duration(delay)}")
+        log("INFO", f"⏰ 预计开始时间：{estimated_start.strftime('%H:%M:%S')}")
+        wait_with_countdown(delay, "天翼云盘签到")
 
     log("INFO", f"📝 共发现 {len(accounts)} 个账号，开始处理")
 
