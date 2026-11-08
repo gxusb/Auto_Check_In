@@ -202,6 +202,26 @@ class TianYiYunPan:
         self.session = requests.Session()
 
     @staticmethod
+    def _mask_username(username):
+        """隐藏用户名的部分信息，避免日志暴露完整账号。"""
+        username = str(username)
+
+        if "@" in username:
+            name, domain = username.split("@", 1)
+            if len(name) <= 1:
+                masked_name = name + "*"
+            else:
+                masked_name = name[0] + "*" * (len(name) - 1)
+            return f"{masked_name}@{domain}"
+
+        if username.isdigit() and len(username) == 11:
+            return f"{username[:3]}****{username[-4:]}"
+
+        if len(username) <= 1:
+            return username + "*"
+        return username[0] + "*" * (len(username) - 1)
+
+    @staticmethod
     def _base64_to_radix36(value):
         """将 Base64 字符串转换为接口要求的 36 进制字符串。"""
         output = []
@@ -406,7 +426,11 @@ class TianYiYunPan:
                     timeout=REQUEST_TIMEOUT,
                 )
 
-            log("SUCCESS", "✅ 登录成功", self.index)
+            log(
+                "SUCCESS",
+                f"✅ 登录成功，用户：{self._mask_username(self.username)}",
+                self.index,
+            )
             return True
 
         except Exception as exc:
