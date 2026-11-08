@@ -383,7 +383,7 @@ class TianYiYunPan:
         before_total = before.get("totalSize") if isinstance(before, dict) else None
 
         change_text = ""
-        if isinstance(before_total, (int, float)) and isinstance(total, (int, float)):
+        if isinstance(before_total, (int, float)):
             change_mb = (total - before_total) / 1024**2
             change_text = f"({change_mb:+.2f} MB) "
 
@@ -392,9 +392,11 @@ class TianYiYunPan:
             f"已用 {cls._format_size(max(0, used))} / {cls._format_size(max(0, total))}"
         )
 
-        if total < 0 or used < 0:
-            return line + " ⚠️ 用量数据异常"
-        return line + (" ⚠️ 用量数据异常" if used > total else "")
+        return line + (
+            " ⚠️ 用量数据异常"
+            if total < 0 or used < 0 or used > total
+            else ""
+        )
 
     @classmethod
     def format_capacity_info(cls, before_info, after_info):
