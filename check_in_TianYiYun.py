@@ -44,6 +44,7 @@ import rsa
 # -------------------- 配置 --------------------
 
 REQUEST_TIMEOUT = 15
+ACCOUNT_DELAY_RANGE = (5, 20)
 RANDOM_SIGNIN = os.getenv("RANDOM_SIGNIN", "true").strip().lower() == "true"
 
 try:
@@ -153,63 +154,6 @@ def wait_with_countdown(seconds, task_name):
             log("INFO", f"⏳ {task_name}倒计时：{format_duration(remaining)}")
 
         time.sleep(min(1, remaining_seconds))
-
-
-def notify_user(title, content):
-    """发送通知；没有通知模块时，将内容输出到统一格式日志。"""
-    if notification_send is None:
-        log("INFO", f"📢 {title}")
-        for line in content.splitlines():
-            log("INFO", line)
-        return
-
-    output = io.StringIO()
-    try:
-        with redirect_stdout(output), redirect_stderr(output):
-            notification_send(title, content)
-    except Exception as exc:
-        log_captured_output(output.getvalue(), level="INFO")
-        log("ERROR", f"❌ 通知发送失败：{exc}")
-        return
-
-    log_captured_output(output.getvalue(), level="INFO")
-    log("SUCCESS", f"✅ 通知发送完成：{title}")
-
-
-def load_accounts():
-    """读取并校验 TY_ACCOUNTS 环境变量。"""
-    raw_accounts = os.getenv("TY_ACCOUNTS", "").strip()
-    if not raw_accounts:
-        raise ValueError("未设置 TY_ACCOUNTS 环境变量")
-
-    try:
-        accounts = json.loads(raw_accounts)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"TY_ACCOUNTS 不是有效的 JSON：{exc}") from exc
-
-    if not isinstance(accounts, list) or not accounts:
-        raise ValueError("TY_ACCOUNTS 必须是一个非空 JSON 数组")
-
-    valid_accounts = []
-    for index, account in enumerate(accounts, start=1):
-        if not isinstance(account, dict):
-            raise ValueError(
-                f"第 {index} 个账号必须是对象，格式："
-                "{'username': '...', 'password': '...'}"
-            )
-
-        username = str(account.get("username", "")).strip()
-        password = str(account.get("password", ""))
-
-        if not username or not password:
-            raise ValueError(f"第 {index} 个账号缺少 username 或 password")
-
-        valid_accounts.append({
-            "username": username,
-            "password": password,
-        })
-
-    return valid_accounts
 
 
 if notification_send is None:
@@ -331,84 +275,6 @@ class TianYiYunPan:
             text = text[:-2] if text.endswith(");") else text[:-1]
 
         return json.loads(text)
-
-    def get_size_info(self):
-        """获取个人及家庭网盘容量；失败时返回 None。"""
-        try:
-            response = self.session.get(
-                "https://cloud.189.cn/api/portal/getUserSizeInfo.action",
-                headers={
-                    **LOGIN_HEADERS,
-                    "Referer": "https://cloud.189.cn/web/main/",
-                    "Accept": "application/json;charset=UTF-8",
-                },
-                timeout=REQUEST_TIMEOUT,
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as exc:
-            log("WARN", f"⚠️ 获取网盘容量失败：{exc}", self.index)
-            return None
-
-    @staticmethod
-    def _format_size(size_bytes):
-        """将字节转换为合理的容量单位，保证数值在有效范围内。"""
-        try:
-            size_value = float(size_bytes)
-        except (TypeError, ValueError):
-            return "N/A"
-
-        if size_value < 0:
-            size_value = 0
-
-        if size_value >= 1024**4:
-            return f"{size_value / 1024**4:.4f}TB"
-        return f"{size_value / 1024**3:.4f}GB"
-
-    @classmethod
-    def _format_capacity_line(cls, label, before_info, after_info, key):
-        """展示容量变化、已用容量与总容量，并避免无效容量导致的计算异常。"""
-        after = after_info.get(key) if isinstance(after_info, dict) else None
-        if not isinstance(after, dict):
-            return f"{label}：容量信息无法获取"
-
-        total = after.get("totalSize")
-        used = after.get("usedSize")
-        if not all(isinstance(value, (int, float)) for value in (total, used)):
-            return f"{label}：容量信息无法获取"
-
-        before = before_info.get(key) if isinstance(
-            before_info, dict) else None
-        before_total = before.get("totalSize") if isinstance(
-            before, dict) else None
-
-        change_text = ""
-        if isinstance(before_total, (int, float)):
-            change_mb = (total - before_total) / 1024**2
-            change_text = f"[{change_mb:+.0f}MB] "
-
-        line = (
-            f"{label}：{change_text}"
-            f"已用 {cls._format_size(max(0, used))} / {cls._format_size(max(0, total))}"
-        )
-
-        return line + (
-            " ⚠️ 用量数据异常"
-            if total < 0 or used < 0 or used > total
-            else ""
-        )
-
-    @classmethod
-    def format_capacity_info(cls, before_info, after_info):
-        """整理个人及家庭网盘容量信息。"""
-        return "\n".join((
-            cls._format_capacity_line(
-                "个人", before_info, after_info, "cloudCapacityInfo"
-            ),
-            cls._format_capacity_line(
-                "家庭", before_info, after_info, "familyCapacityInfo"
-            ),
-        ))
 
     def login(self):
         """登录天翼云盘。"""
@@ -578,6 +444,84 @@ class TianYiYunPan:
         except Exception as exc:
             return f"❌ 签到异常：{exc}"
 
+    def get_size_info(self):
+        """获取个人及家庭网盘容量；失败时返回 None。"""
+        try:
+            response = self.session.get(
+                "https://cloud.189.cn/api/portal/getUserSizeInfo.action",
+                headers={
+                    **LOGIN_HEADERS,
+                    "Referer": "https://cloud.189.cn/web/main/",
+                    "Accept": "application/json;charset=UTF-8",
+                },
+                timeout=REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:
+            log("WARN", f"⚠️ 获取网盘容量失败：{exc}", self.index)
+            return None
+
+    @staticmethod
+    def _format_size(size_bytes):
+        """将字节转换为合理的容量单位，保证数值在有效范围内。"""
+        try:
+            size_value = float(size_bytes)
+        except (TypeError, ValueError):
+            return "N/A"
+
+        if size_value < 0:
+            size_value = 0
+
+        if size_value >= 1024**4:
+            return f"{size_value / 1024**4:.4f}TB"
+        return f"{size_value / 1024**3:.4f}GB"
+
+    @classmethod
+    def _format_capacity_line(cls, label, before_info, after_info, key):
+        """展示容量变化、已用容量与总容量，并避免无效容量导致的计算异常。"""
+        after = after_info.get(key) if isinstance(after_info, dict) else None
+        if not isinstance(after, dict):
+            return f"{label}：容量信息无法获取"
+
+        total = after.get("totalSize")
+        used = after.get("usedSize")
+        if not all(isinstance(value, (int, float)) for value in (total, used)):
+            return f"{label}：容量信息无法获取"
+
+        before = before_info.get(key) if isinstance(
+            before_info, dict) else None
+        before_total = before.get("totalSize") if isinstance(
+            before, dict) else None
+
+        change_text = ""
+        if isinstance(before_total, (int, float)):
+            change_mb = (total - before_total) / 1024**2
+            change_text = f"[{change_mb:+.0f}MB] "
+
+        line = (
+            f"{label}：{change_text}"
+            f"已用 {cls._format_size(max(0, used))} / {cls._format_size(max(0, total))}"
+        )
+
+        return line + (
+            " ⚠️ 用量数据异常"
+            if total < 0 or used < 0 or used > total
+            else ""
+        )
+
+    @classmethod
+    def format_capacity_info(cls, before_info, after_info):
+        """整理个人及家庭网盘容量信息。"""
+        return "\n".join((
+            cls._format_capacity_line(
+                "个人", before_info, after_info, "cloudCapacityInfo"
+            ),
+            cls._format_capacity_line(
+                "家庭", before_info, after_info, "familyCapacityInfo"
+            ),
+        ))
+
     def run(self):
         """处理当前账号，返回签到及容量结果。"""
         try:
@@ -622,13 +566,49 @@ class TianYiYunPan:
 # -------------------- 批量处理与通知 --------------------
 
 
+def load_accounts():
+    """读取并校验 TY_ACCOUNTS 环境变量。"""
+    raw_accounts = os.getenv("TY_ACCOUNTS", "").strip()
+    if not raw_accounts:
+        raise ValueError("未设置 TY_ACCOUNTS 环境变量")
+
+    try:
+        accounts = json.loads(raw_accounts)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"TY_ACCOUNTS 不是有效的 JSON：{exc}") from exc
+
+    if not isinstance(accounts, list) or not accounts:
+        raise ValueError("TY_ACCOUNTS 必须是一个非空 JSON 数组")
+
+    valid_accounts = []
+    for index, account in enumerate(accounts, start=1):
+        if not isinstance(account, dict):
+            raise ValueError(
+                f"第 {index} 个账号必须是对象，格式："
+                "{'username': '...', 'password': '...'}"
+            )
+
+        username = str(account.get("username", "")).strip()
+        password = str(account.get("password", ""))
+
+        if not username or not password:
+            raise ValueError(f"第 {index} 个账号缺少 username 或 password")
+
+        valid_accounts.append({
+            "username": username,
+            "password": password,
+        })
+
+    return valid_accounts
+
+
 def process_accounts(accounts):
     """依次处理账号，账号之间增加随机间隔。"""
     results = []
 
     for index, account in enumerate(accounts, start=1):
         if index > 1:
-            delay = random.uniform(10, 30)
+            delay = random.uniform(*ACCOUNT_DELAY_RANGE)
             log("INFO", f"💤 等待 {delay:.1f} 秒后处理下一个账号")
             time.sleep(delay)
 
@@ -660,6 +640,27 @@ def format_notification(results):
         ))
 
     return "\n".join(lines)
+
+
+def notify_user(title, content):
+    """发送通知；没有通知模块时，将内容输出到统一格式日志。"""
+    if notification_send is None:
+        log("INFO", f"📢 {title}")
+        for line in content.splitlines():
+            log("INFO", line)
+        return
+
+    output = io.StringIO()
+    try:
+        with redirect_stdout(output), redirect_stderr(output):
+            notification_send(title, content)
+    except Exception as exc:
+        log_captured_output(output.getvalue(), level="INFO")
+        log("ERROR", f"❌ 通知发送失败：{exc}")
+        return
+
+    log_captured_output(output.getvalue(), level="INFO")
+    log("SUCCESS", f"✅ 通知发送完成：{title}")
 
 
 def main():
